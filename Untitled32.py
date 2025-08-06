@@ -6,192 +6,143 @@
 
 import streamlit as st
 import pandas as pd
-import numpy as np
-import plotly.express as px
-import plotly.graph_objects as go
+import random
 
-# --- Page Configuration ---
-st.set_page_config(
-    page_title="Advanced Loan Amortization Calculator",
-    layout="wide", # Set layout to wide for landscape view
-    initial_sidebar_state="expanded"
-)
+# Function to generate the timetable
+def generate_timetable(teachers_data, num_periods=5):
+    """
+    Generates timetables for two sections based on teacher availability.
 
-# --- Custom CSS for better aesthetics ---
-st.markdown("""
-    <style>
-        /* General styling for the app */
-        .stApp {
-            background-color: #f0f2f6; /* Light gray background */
-            color: #333333; /* Darker text */
-        }
-        /* Header styling */
-        h1, h2, h3 {
-            color: #1a73e8; /* Google Blue */
-        }
-        /* Buttons styling */
-        .stButton>button {
-            background-color: #4285f4; /* Google Blue */
-            color: white;
-            border-radius: 8px;
-            padding: 10px 20px;
-            font-size: 16px;
-            border: none;
-            box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
-            transition: all 0.3s ease;
-        }
-        .stButton>button:hover {
-            background-color: #357ae8; /* Darker blue on hover */
-            box-shadow: 3px 3px 8px rgba(0,0,0,0.3);
-            transform: translateY(-2px);
-        }
-        /* Input fields styling */
-        .stTextInput>div>div>input {
-            border-radius: 8px;
-            border: 1px solid #ccc;
-            padding: 8px 12px;
-        }
-        .stNumberInput>div>div>input {
-            border-radius: 8px;
-            border: 1px solid #ccc;
-            padding: 8px 12px;
-        }
-        /* Expander styling */
-        .streamlit-expanderHeader {
-            background-color: #e8f0fe; /* Light blue for expander header */
-            border-radius: 8px;
-            padding: 10px;
-            font-weight: bold;
-            color: #1a73e8;
-        }
-        /* Metrics styling */
-        [data-testid="stMetric"] {
-            background-color: #ffffff;
-            border-radius: 10px;
-            padding: 15px;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-            margin-bottom: 15px;
-        }
-        [data-testid="stMetricLabel"] {
-            font-size: 1.1em;
-            color: #555555;
-        }
-        [data-testid="stMetricValue"] {
-            font-size: 1.8em;
-            font-weight: bold;
-            color: #1a73e8;
-        }
-        /* Table styling */
-        .dataframe {
-            font-size: 0.9em;
-        }
-    </style>
-""", unsafe_allow_html=True)
+    Args:
+        teachers_data (dict): A dictionary containing teacher information for each section.
+                              Example: {"Section 1": [{"name": "Alice", "days": ["Monday"]}], ...}
+        num_periods (int): The number of periods per day.
 
-# --- Title and Description ---
-st.title("🏡 Advanced Loan Amortization Calculator")
-st.write("Calculate your loan payments, generate a detailed amortization schedule, and visualize your repayment journey.")
+    Returns:
+        dict: A dictionary containing pandas DataFrames for each section's timetable.
+    """
+    days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+    sections = ["Section 1", "Section 2"]
 
-# --- Input Section (Sidebar for better organization) ---
-st.sidebar.header("Loan Details")
+    # Initialize empty DataFrames for each section's timetable
+    timetables = {section: pd.DataFrame(index=days, columns=[f"Period {i+1}" for i in range(num_periods)]) for section in sections}
 
-principal = st.sidebar.number_input("Principal Amount ($)", min_value=1000.0, value=200000.0, step=1000.0)
-annual_rate = st.sidebar.number_input("Annual Interest Rate (%)", min_value=0.01, value=4.5, step=0.01)
-term_years = st.sidebar.number_input("Loan Term (Years)", min_value=1, value=30, step=1)
-extra_payment = st.sidebar.number_input("Optional: Extra Monthly Payment ($)", min_value=0.0, value=0.0, step=10.0)
+    # Prepare a dictionary to quickly look up teachers available on specific days for each section
+    teachers_available_per_day_section = {section: {day: [] for day in days} for section in sections}
+    for section_name, teachers_list in teachers_data.items():
+        for teacher_info in teachers_list:
+            name = teacher_info['name']
+            available_days = teacher_info['days']
+            for day in available_days:
+                if day in teachers_available_per_day_section[section_name]:
+                    teachers_available_per_day_section[section_name][day].append(name)
 
-calculate_button = st.sidebar.button("Calculate Amortization")
+    # Iterate through each day and period to assign teachers
+    for day in days:
+        # This set tracks teachers already assigned in the *current period* across both sections
+        # to prevent a teacher from being in two places at once.
+        teachers_assigned_in_current_period = set()
 
-# --- Calculation Logic ---
-if calculate_button:
-    if principal <= 0 or annual_rate < 0 or term_years <= 0:
-        st.error("Please enter positive values for Principal, Rate, and Term.")
+        for period_idx in range(num_periods):
+            # --- Assign for Section 1 ---
+            assigned_s1 = False
+            # Get teachers available for Section 1 on this specific day
+            available_s1_teachers = list(teachers_available_per_day_section["Section 1"][day])
+            random.shuffle(available_s1_teachers) # Shuffle to randomize assignment preference
+
+            for teacher in available_s1_teachers:
+                # Check if the teacher is not already assigned in this period (across both sections)
+                if teacher not in teachers_assigned_in_current_period:
+                    timetables["Section 1"].loc[day, f"Period {period_idx+1}"] = teacher
+                    teachers_assigned_in_current_period.add(teacher) # Mark teacher as busy for this period
+                    assigned_s1 = True
+                    break
+            if not assigned_s1:
+                timetables["Section 1"].loc[day, f"Period {period_idx+1}"] = "Free" # No suitable teacher found
+
+            # --- Assign for Section 2 ---
+            assigned_s2 = False
+            # Get teachers available for Section 2 on this specific day
+            available_s2_teachers = list(teachers_available_per_day_section["Section 2"][day])
+            random.shuffle(available_s2_teachers) # Shuffle to randomize assignment preference
+
+            for teacher in available_s2_teachers:
+                # Check if the teacher is not already assigned in this period (across both sections)
+                if teacher not in teachers_assigned_in_current_period:
+                    timetables["Section 2"].loc[day, f"Period {period_idx+1}"] = teacher
+                    teachers_assigned_in_current_period.add(teacher) # Mark teacher as busy for this period
+                    assigned_s2 = True
+                    break
+            if not assigned_s2:
+                timetables["Section 2"].loc[day, f"Period {period_idx+1}"] = "Free" # No suitable teacher found
+
+    return timetables
+
+# --- Streamlit UI ---
+st.set_page_config(layout="wide") # Use wide layout for better display of tables
+st.title("College Timetable Generator 🗓️")
+st.markdown("Enter teacher details and their availability for two sections to generate a basic timetable.")
+
+# Initialize session state variables to store teacher data
+if 'teachers_section1' not in st.session_state:
+    st.session_state.teachers_section1 = []
+if 'teachers_section2' not in st.session_state:
+    st.session_state.teachers_section2 = []
+
+days_of_week = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+
+st.sidebar.header("Add Teachers and Availability")
+
+# --- Section 1 Teacher Input ---
+st.sidebar.subheader("Section 1 Teachers")
+# Loop through the list of teachers in session state to display input fields
+for i, teacher in enumerate(st.session_state.teachers_section1):
+    with st.sidebar.expander(f"Teacher {i+1} (Section 1)"):
+        # Use unique keys for each widget to prevent issues with dynamic lists
+        teacher['name'] = st.text_input(f"Name (S1, T{i+1})", value=teacher.get('name', ''), key=f"name_s1_{i}")
+        teacher['days'] = st.multiselect(f"Available Days (S1, T{i+1})", days_of_week, default=teacher.get('days', []), key=f"days_s1_{i}")
+# Button to add a new teacher input row for Section 1
+if st.sidebar.button("Add Teacher for Section 1"):
+    st.session_state.teachers_section1.append({'name': '', 'days': []})
+
+st.sidebar.markdown("---") # Separator
+
+# --- Section 2 Teacher Input ---
+st.sidebar.subheader("Section 2 Teachers")
+# Loop through the list of teachers in session state to display input fields
+for i, teacher in enumerate(st.session_state.teachers_section2):
+    with st.sidebar.expander(f"Teacher {i+1} (Section 2)"):
+        # Use unique keys for each widget
+        teacher['name'] = st.text_input(f"Name (S2, T{i+1})", value=teacher.get('name', ''), key=f"name_s2_{i}")
+        teacher['days'] = st.multiselect(f"Available Days (S2, T{i+1})", days_of_week, default=teacher.get('days', []), key=f"days_s2_{i}")
+# Button to add a new teacher input row for Section 2
+if st.sidebar.button("Add Teacher for Section 2"):
+    st.session_state.teachers_section2.append({'name': '', 'days': []})
+
+st.sidebar.markdown("---") # Separator
+
+# --- Generate Timetables Button ---
+if st.sidebar.button("Generate Timetables 🚀"):
+    # Filter out any teacher entries where the name is empty
+    valid_teachers_s1 = [t for t in st.session_state.teachers_section1 if t['name'].strip() != '']
+    valid_teachers_s2 = [t for t in st.session_state.teachers_section2 if t['name'].strip() != '']
+
+    if not valid_teachers_s1 and not valid_teachers_s2:
+        st.error("Please add at least one teacher for either section to generate timetables.")
     else:
-        # Convert annual rate to monthly rate and term to months
-        monthly_rate = (annual_rate / 100) / 12
-        term_months = term_years * 12
+        # Combine valid teacher data for the generation function
+        teacher_data_for_generation = {
+            "Section 1": valid_teachers_s1,
+            "Section 2": valid_teachers_s2
+        }
+        # Call the timetable generation function
+        timetables = generate_timetable(teacher_data_for_generation)
 
-        # Calculate monthly payment using the loan amortization formula
-        if monthly_rate == 0: # Handle zero interest rate case
-            monthly_payment_base = principal / term_months
-        else:
-            monthly_payment_base = principal * (monthly_rate * (1 + monthly_rate)**term_months) / ((1 + monthly_rate)**term_months - 1)
+        # Display the generated timetables
+        st.header("Timetable for Section 1")
+        st.dataframe(timetables["Section 1"], use_container_width=True) # Display DataFrame with full width
 
-        # Total monthly payment including extra payment
-        total_monthly_payment = monthly_payment_base + extra_payment
+        st.header("Timetable for Section 2")
+        st.dataframe(timetables["Section 2"], use_container_width=True) # Display DataFrame with full width
 
-        st.subheader("Summary")
-
-        # --- Summary Metrics ---
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Base Monthly Payment", f"${monthly_payment_base:,.2f}")
-        col2.metric("Total Monthly Payment", f"${total_monthly_payment:,.2f}")
-
-        # --- Amortization Schedule Generation ---
-        schedule_data = []
-        remaining_balance = principal
-        total_interest_paid = 0
-        total_principal_paid = 0
-        payment_number = 0
-
-        while remaining_balance > 0.01 and payment_number < term_months * 2: # Add a safety break for very long loans with small extra payments
-            payment_number += 1
-            interest_for_period = remaining_balance * monthly_rate
-            principal_for_period = total_monthly_payment - interest_for_period
-
-            # Adjust last payment to not overpay
-            if remaining_balance < principal_for_period:
-                principal_for_period = remaining_balance
-                total_monthly_payment = principal_for_period + interest_for_period # Adjust last payment amount
-                remaining_balance = 0
-            else:
-                remaining_balance -= principal_for_period
-
-            total_interest_paid += interest_for_period
-            total_principal_paid += principal_for_period
-
-            schedule_data.append({
-                "Payment No.": payment_number,
-                "Payment Amount": total_monthly_payment,
-                "Principal Paid": principal_for_period,
-                "Interest Paid": interest_for_period,
-                "Remaining Balance": remaining_balance
-            })
-
-        df_schedule = pd.DataFrame(schedule_data)
-
-        col3.metric("Total Interest Paid", f"${total_interest_paid:,.2f}")
-        col4.metric("Loan Duration (Months)", f"{payment_number}")
-
-        # --- Visualizations Section ---
-        st.subheader("Visualizations")
-
-        # Plot 1: Principal vs. Interest Paid Over Time
-        fig_payments = px.line(df_schedule, x="Payment No.", y=["Principal Paid", "Interest Paid"],
-                               title="Principal vs. Interest Paid Over Time",
-                               labels={"value": "Amount ($)", "variable": "Component"},
-                               hover_data={"Payment No.": True, "value": ":,.2f", "variable": True})
-        fig_payments.update_layout(hovermode="x unified")
-        st.plotly_chart(fig_payments, use_container_width=True)
-
-        # Plot 2: Remaining Balance Over Time
-        fig_balance = px.area(df_schedule, x="Payment No.", y="Remaining Balance",
-                              title="Remaining Loan Balance Over Time",
-                              labels={"Remaining Balance": "Balance ($)"},
-                              line_shape="spline",
-                              hover_data={"Payment No.": True, "Remaining Balance": ":,.2f"})
-        fig_balance.update_layout(hovermode="x unified")
-        st.plotly_chart(fig_balance, use_container_width=True)
-
-        # --- Amortization Schedule Section (Expandable) ---
-        with st.expander("View Full Amortization Schedule"):
-            st.dataframe(df_schedule.style.format({
-                "Payment Amount": "${:,.2f}",
-                "Principal Paid": "${:,.2f}",
-                "Interest Paid": "${:,.2f}",
-                "Remaining Balance": "${:,.2f}"
-            }), use_container_width=True)
-
-else:
-    st.info("Enter loan details in the sidebar and click 'Calculate Amortization' to generate the schedule.")
-
+        st.success("Timetables generated successfully! ✨")
